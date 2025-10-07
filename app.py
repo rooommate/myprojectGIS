@@ -5,6 +5,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
 import plotly.graph_objects as go
+import pydeck as pdk
+
+
+from park_coordinates import PARK_COORDINATES, create_map_data
 
 st.set_page_config(
     page_title="Park PM2.5 in BKK Dashboard",
@@ -177,12 +181,13 @@ def show_park_visualizations(df, location, year, month):
     st.subheader("กราฟการวิเคราะห์")
     
     # Create tabs for different visualizations
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5,tab6 = st.tabs([
         "ค่าเฉลี่ย PM2.5", 
         "แนวโน้มรายเดือน", 
         "เปรียบเทียบสถานที่", 
         "Box Plot วิเคราะห์", 
-        "วันเกินมาตรฐาน"
+        "วันเกินมาตรฐาน",
+        "แผนที่"
     ])
     
     with tab1:
@@ -397,6 +402,64 @@ def show_park_visualizations(df, location, year, month):
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
             st.error(f"ข้อผิดพลาดในการสร้างกราฟวันเกินมาตรฐาน: {str(e)}")
+    with tab6:
+            st.header("🗺️ แผนที่สวนสาธารณะในกรุงเทพฯ พร้อมระดับความเสี่ยง")
+
+    # สร้างข้อมูลแผนที่
+            df_map = create_map_data()
+
+    # คำนวณค่า PM2.5 เฉลี่ยของแต่ละสวน
+            avg_pm = df.groupby("สถานที่")["ค่าเฉลี่ย"].mean().reset_index()
+            avg_pm.rename(columns={"ค่าเฉลี่ย": "pm25_avg"}, inplace=True)
+
+    # รวมเข้ากับพิกัด
+            df_map = df_map.merge(avg_pm, left_on="name", right_on="สถานที่", how="left")
+
+    # จัดระดับ
+      # จัดระดับความเสี่ยง
+    def classify_risk(val):
+        if pd.isna(val):
+            return "ไม่มีข้อมูล"
+        elif val <= 25:
+            return "🟢 ดี"
+        elif val <= 50:
+            return "🟡 ปานกลาง"
+        else:
+            return "🔴 เสี่ยงสูง"
+
+    df_map["ระดับความเสี่ยง"] = df_map["pm25_avg"].apply(classify_risk)
+
+    # แสดงผลเป็นตารางสรุป
+    st.dataframe(df_map[["name", "pm25_avg", "ระดับความเสี่ยง"]])
+
+    # ใช้ pydeck ในการแสดงผลแผนที่พร้อมสี
+
+    color_map = {
+        "🟢 ดี": [0, 200, 0],
+        "🟡 ปานกลาง": [255, 215, 0],
+        "🔴 เสี่ยงสูง": [255, 0, 0],
+        "ไม่มีข้อมูล": [200, 200, 200],
+    }
+
+    df_map["color"] = df_map["ระดับความเสี่ยง"].apply(lambda x: color_map[x])
+
+    layer = pdk.Layer(
+        "ScatterplotLayer",
+        data=df_map,
+        get_position=["lon", "lat"],
+        get_fill_color="color",
+        get_radius=200,
+        pickable=True,
+    )
+
+    view_state = pdk.ViewState(
+        latitude=df_map["lat"].mean(),
+        longitude=df_map["lon"].mean(),
+        zoom=11
+    )
+
+    r = pdk.Deck(layers=[layer], initial_view_state=view_state, tooltip={"text": "{name}\nค่าเฉลี่ย PM2.5: {pm25_avg:.1f}\n{ระดับความเสี่ยง}"})
+    st.pydeck_chart(r)
 
 def show_park_data_table(df):
     """Display detailed data table"""
