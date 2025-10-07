@@ -6,6 +6,12 @@ import seaborn as sns
 import plotly.express as px
 import plotly.graph_objects as go
 import pydeck as pdk
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.svm import SVR
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 
 
 from park_coordinates import PARK_COORDINATES, create_map_data
@@ -18,13 +24,16 @@ st.set_page_config(
 )
 
 def main():
-    st.title(" PM2.5 Analysis Dashboard - สวนสาธารณะกรุงเทพฯ")
-    st.markdown("แดชบอร์ดวิเคราะห์ค่า PM2.5 ของสวนสาธารณะต่างๆ ในกรุงเทพมหานคร")
-    
-    show_park_report()
+    st.sidebar.title("เมนูหลัก")
+    page = st.sidebar.radio("เลือกหน้า", ["รายงานวิเคราะห์", "การพยากรณ์ 4 ปีข้างหน้า"])
+
+    if page == "รายงานวิเคราะห์":
+        show_park_report()
+    elif page == "การพยากรณ์ 4 ปีข้างหน้า":
+        show_forecast_page()
 
 def show_park_report():
-    st.header("📋 รายงานการวิเคราะห์ PM2.5 สวนสาธารณะกรุงเทพฯ")
+    st.header("รายงานการวิเคราะห์ PM2.5 สวนสาธารณะกรุงเทพฯ")
     st.markdown("รายงานค่า PM2.5 ของสวนสาธารณะต่างๆ ในกรุงเทพมหานคร พร้อมระบบกรองข้อมูลตามสถานที่และเวลา")
     
     # Load AllParkYear.csv
@@ -54,7 +63,7 @@ def show_park_report():
     # Year filter
     available_years = ['ทั้งหมด'] + [str(year) for year in sorted(df_processed['ปี'].unique().tolist())]
     selected_year = st.sidebar.selectbox(
-        "📅 เลือกปี",
+        "เลือกปี",
         available_years
     )
     
@@ -68,14 +77,14 @@ def show_park_report():
     
     available_months = ['ทั้งหมด'] + list(months_thai.values())
     selected_month = st.sidebar.selectbox(
-        "📅 เลือกเดือน",
+        "เลือกเดือน",
         available_months
     )
     
     filtered_df = filter_park_data(df_processed, selected_location, selected_year, selected_month)
     
     if filtered_df.empty:
-        st.warning("⚠️ไม่พบข้อมูลตามเงื่อนไขที่เลือก")
+        st.warning("ไม่พบข้อมูลตามเงื่อนไขที่เลือก")
         return
     
     show_park_metrics(filtered_df)
@@ -167,7 +176,7 @@ def show_park_metrics(df):
         
         with col3:
             total_exceeding = pd.to_numeric(df['จำนวนวันเกินมาตรฐาน'], errors='coerce').sum()
-            st.metric("📅 วันเกินมาตรฐาน", f"{total_exceeding:.0f} วัน" if not pd.isna(total_exceeding) else "N/A")
+            st.metric("วันเกินมาตรฐาน", f"{total_exceeding:.0f} วัน" if not pd.isna(total_exceeding) else "N/A")
         
         with col4:
             locations_count = df['สถานที่'].nunique()
@@ -266,6 +275,7 @@ def show_park_visualizations(df, location, year, month):
             st.error(f"ข้อผิดพลาดในการสร้างกราฟแนวโน้ม: {str(e)}")
     
     with tab3:
+        
         # Location comparison scatter plot
         try:
             if len(df['สถานที่'].unique()) > 1:
@@ -402,8 +412,9 @@ def show_park_visualizations(df, location, year, month):
             st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
             st.error(f"ข้อผิดพลาดในการสร้างกราฟวันเกินมาตรฐาน: {str(e)}")
+
     with tab6:
-            st.header("🗺️ แผนที่สวนสาธารณะในกรุงเทพฯ พร้อมระดับความเสี่ยง")
+            st.header("แผนที่สวนสาธารณะในกรุงเทพฯ พร้อมระดับความเสี่ยง")
 
     # สร้างข้อมูลแผนที่
             df_map = create_map_data()
@@ -417,15 +428,15 @@ def show_park_visualizations(df, location, year, month):
 
     # จัดระดับ
       # จัดระดับความเสี่ยง
-    def classify_risk(val):
-        if pd.isna(val):
-            return "ไม่มีข้อมูล"
-        elif val <= 25:
-            return "🟢 ดี"
-        elif val <= 50:
-            return "🟡 ปานกลาง"
-        else:
-            return "🔴 เสี่ยงสูง"
+            def classify_risk(val):
+               if pd.isna(val):
+                  return "ไม่มีข้อมูล"
+               elif val <= 25:
+                return "🟢 ดี"
+               elif val <= 50:
+                return "🟡 ปานกลาง"
+               else:
+                return "🔴 เสี่ยงสูง"
 
     df_map["ระดับความเสี่ยง"] = df_map["pm25_avg"].apply(classify_risk)
 
@@ -465,7 +476,6 @@ def show_park_data_table(df):
     """Display detailed data table"""
     st.subheader("ตารางข้อมูลรายละเอียด")
     
-    # Format the dataframe for display
     display_df = df.copy()
     display_df = display_df.round(1)
     
@@ -474,11 +484,11 @@ def show_park_data_table(df):
         if pd.isna(val):
             return ''
         elif val > 50:
-            return 'background-color: #ffcccc'  # Light red for high levels
+            return 'background-color: #ffcccc; color: #cc0000; font-weight: bold'  # Light red for high levels
         elif val > 25:
-            return 'background-color: #fff2cc'  # Light yellow for moderate levels
+            return 'background-color: #fff2cc; color: #cc0000; font-weight: bold' # Light yellow for moderate levels
         else:
-            return 'background-color: #ccffcc'  # Light green for good levels
+            return 'background-color: #ccffcc; color: #cc0000; font-weight: bold'# Light green for good levels
     
     # Apply styling
     styled_df = display_df.style.applymap(color_pm25, subset=['ค่าเฉลี่ย', 'ค่าสูงสุด'])
@@ -506,5 +516,323 @@ def show_park_data_table(df):
     - มาตรฐานไทย: ไม่เกิน 25 μg/m³ ต่อปี
     """)
 
+def show_forecast_page():
+    st.header("การทำนายผล PM2.5 ล่วงหน้า 4 ปี")
+    st.markdown("ใช้ข้อมูลจาก AllParkYear.csv เพื่อทำนายแนวโน้มค่าเฉลี่ย PM2.5 ของสวนสาธารณะในอนาคต")
+
+    try:
+        df = pd.read_csv("Group_file/AllParkYear.csv")
+    except FileNotFoundError:
+        st.error("ไม่พบไฟล์ AllParkYear.csv ในโฟลเดอร์ Group_file")
+        return
+
+    df_processed = preprocess_park_data(df)
+    if df_processed.empty:
+        st.error("ไม่สามารถประมวลผลข้อมูลได้")
+        return
+
+    # เลือกโมเดลที่จะใช้ทำนาย
+    st.sidebar.header("ตั้งค่าการพยากรณ์")
+    
+    available_locations = ['ทั้งหมด'] + sorted(df_processed['สถานที่'].unique().tolist())
+    forecast_location = st.sidebar.selectbox(
+        "เลือกสถานที่สำหรับการพยากรณ์",
+        available_locations
+    )
+    
+    model_choice = st.sidebar.selectbox(
+        "เลือกโมเดลที่ต้องการใช้",
+        ["Linear Regression", "Random Forest", "Gradient Boosting", "SVM (RBF)", "แสดงทุกโมเดล"]
+    )
+
+    # กรองข้อมูลตามสถานที่
+    if forecast_location != 'ทั้งหมด':
+        df_filtered = df_processed[df_processed['สถานที่'] == forecast_location].copy()
+    else:
+        df_filtered = df_processed.copy()
+
+    # ใช้ค่าเฉลี่ย PM2.5 ต่อปี
+    df_yearly = df_filtered.groupby("ปี")["ค่าเฉลี่ย"].mean().reset_index()
+    df_yearly["ค่าเฉลี่ย"] = pd.to_numeric(df_yearly["ค่าเฉลี่ย"], errors="coerce")
+
+    st.subheader(f"ข้อมูลค่าเฉลี่ย PM2.5 ต่อปี - {forecast_location}")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("จำนวนปีที่มีข้อมูล", len(df_yearly))
+    with col2:
+        st.metric("ค่าเฉลี่ยทั้งหมด", f"{df_yearly['ค่าเฉลี่ย'].mean():.1f} μg/m³")
+    with col3:
+        trend = "เพิ่มขึ้น" if df_yearly['ค่าเฉลี่ย'].iloc[-1] > df_yearly['ค่าเฉลี่ย'].iloc[0] else "ลดลง"
+        st.metric("แนวโน้ม", trend)
+    
+    st.dataframe(df_yearly, use_container_width=True)
+
+    # แบ่งข้อมูล train/test
+    X = df_yearly[["ปี"]]
+    y = df_yearly["ค่าเฉลี่ย"]
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    models = {
+        "Linear Regression": LinearRegression(),
+        "Random Forest": RandomForestRegressor(random_state=42),
+        "Gradient Boosting": GradientBoostingRegressor(random_state=42),
+        "SVM (RBF)": SVR(kernel="rbf")
+    }
+
+    results = []
+    future_preds = {}
+    last_year = int(df_yearly["ปี"].max())
+    future_years = np.array([last_year + i for i in range(1, 5)]).reshape(-1, 1)
+    future_scaled = scaler.transform(future_years)
+
+    # เก็บข้อมูลการทำนายทั้งหมด
+    all_predictions = {}
+    
+    for name, model in models.items():
+        model.fit(X_train_scaled, y_train)
+        y_pred = model.predict(X_test_scaled)
+
+        r2 = r2_score(y_test, y_pred)
+        mae = mean_absolute_error(y_test, y_pred)
+        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+
+        results.append({
+            "Model": name,
+            "R² Score": r2,
+            "MAE": mae,
+            "RMSE": rmse
+        })
+
+        # ทำนาย 4 ปีข้างหน้า
+        future_preds[name] = model.predict(future_scaled)
+        
+        # ทำนายข้อมูลทั้งหมด (อดีต + อนาคต)
+        all_years = np.array(list(X['ปี']) + list(future_years.flatten())).reshape(-1, 1)
+        all_scaled = scaler.transform(all_years)
+        all_predictions[name] = model.predict(all_scaled)
+
+    st.subheader("Test 20%")
+    results_df = pd.DataFrame(results).sort_values(by="R² Score", ascending=False)
+    st.dataframe(results_df, use_container_width=True)
+    
+    best_model = results_df.iloc[0]['Model']
+    st.success(f"โมเดลที่ดีที่สุด: **{best_model}** (R² Score: {results_df.iloc[0]['R² Score']:.4f})")
+
+    # สร้าง Tabs สำหรับกราฟต่างๆ
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "การพยากรณ์โดยรวม",
+        "เปรียบเทียบโมเดล",
+        "แนวโน้มรายเดือน",
+        "การพยากรณ์แต่ละสถานที่",
+        "ตารางข้อมูล"
+    ])
+
+    with tab1:
+        st.subheader("กราฟแนวโน้มการพยากรณ์ พร้อมข้อมูลในอดีต")
+        
+        # เลือกโมเดลที่จะแสดง
+        if model_choice == "แสดงทุกโมเดล":
+            selected_models = list(models.keys())
+        else:
+            selected_models = [model_choice]
+        
+        # สร้างกราฟที่รวมข้อมูลจริงและการพยากรณ์
+        fig = go.Figure()
+        
+        # เพิ่มข้อมูลจริง
+        fig.add_trace(go.Scatter(
+            x=df_yearly['ปี'],
+            y=df_yearly['ค่าเฉลี่ย'],
+            mode='lines+markers',
+            name='ข้อมูลจริง',
+            line=dict(color='blue', width=3),
+            marker=dict(size=8)
+        ))
+        
+        # เพิ่มการพยากรณ์ของแต่ละโมเดล
+        colors = ['red', 'green', 'orange', 'purple']
+        for idx, model_name in enumerate(selected_models):
+            forecast_years = [last_year + i for i in range(1, 5)]
+            fig.add_trace(go.Scatter(
+                x=forecast_years,
+                y=future_preds[model_name],
+                mode='lines+markers',
+                name=f'พยากรณ์ - {model_name}',
+                line=dict(dash='dash', width=2, color=colors[idx % len(colors)]),
+                marker=dict(size=8, symbol='diamond')
+            ))
+        
+        fig.update_layout(
+            title=f"แนวโน้ม PM2.5: ข้อมูลจริง vs การพยากรณ์ ({forecast_location})",
+            xaxis_title="ปี",
+            yaxis_title="PM2.5 (μg/m³)",
+            hovermode='x unified',
+            height=500
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+
+    with tab2:
+        st.subheader("เปรียบเทียบการทำนายของโมเดลต่างๆ")
+        
+        forecast_df = pd.DataFrame({
+            "ปี": [last_year + i for i in range(1, 5)]
+        })
+        for name, preds in future_preds.items():
+            forecast_df[name] = preds
+
+        # กราฟแท่งเปรียบเทียบ
+        fig = px.bar(
+            forecast_df.melt(id_vars=['ปี'], var_name='โมเดล', value_name='PM2.5'),
+            x='ปี',
+            y='PM2.5',
+            color='โมเดล',
+            barmode='group',
+            title='เปรียบเทียบค่าพยากรณ์ของแต่ละโมเดล',
+        )
+        fig.update_layout(height=500)
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # แสดงค่าเฉลี่ยของการพยากรณ์
+        avg_forecast = forecast_df[list(future_preds.keys())].mean(axis=1)
+        st.info(f"ค่าเฉลี่ยของการพยากรณ์จากทุกโมเดล: {avg_forecast.mean():.1f} μg/m³")
+
+    with tab3:
+        st.subheader("การพยากรณ์แนวโน้มรายเดือน")
+        
+        try:
+            # คำนวณค่าเฉลี่ยรายเดือนในอดีต
+            monthly_avg = df_filtered.groupby('เดือน')['ค่าเฉลี่ย'].mean().reset_index()
+            
+            month_order = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+                          'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
+            monthly_avg['เดือน'] = pd.Categorical(monthly_avg['เดือน'], categories=month_order, ordered=True)
+            monthly_avg = monthly_avg.sort_values('เดือน')
+            
+            # คำนวณอัตราการเปลี่ยนแปลงเฉลี่ยต่อปี
+            yearly_change = (df_yearly['ค่าเฉลี่ย'].iloc[-1] - df_yearly['ค่าเฉลี่ย'].iloc[0]) / len(df_yearly)
+            
+            # สร้างการพยากรณ์รายเดือนสำหรับ 4 ปีข้างหน้า
+            future_monthly = []
+            for year_offset in range(1, 5):
+                for month in month_order:
+                    base_value = monthly_avg[monthly_avg['เดือน'] == month]['ค่าเฉลี่ย'].values
+                    if len(base_value) > 0:
+                        predicted_value = base_value[0] + (yearly_change * year_offset)
+                        future_monthly.append({
+                            'ปี': last_year + year_offset,
+                            'เดือน': month,
+                            'PM2.5_พยากรณ์': predicted_value
+                        })
+            
+            future_monthly_df = pd.DataFrame(future_monthly)
+            
+            # กราฟแนวโน้มรายเดือน
+            fig = px.line(
+                future_monthly_df,
+                x='เดือน',
+                y='PM2.5_พยากรณ์',
+                color='ปี',
+                title='การพยากรณ์ PM2.5 รายเดือนในอนาคต 4 ปี',
+                markers=True
+            )
+            fig.update_layout(height=500)
+            st.plotly_chart(fig, use_container_width=True)
+            
+        except Exception as e:
+            st.warning(f"ไม่สามารถสร้างกราฟรายเดือนได้: {str(e)}")
+
+    with tab4:
+        st.subheader("การพยากรณ์แยกตามสถานที่")
+        
+        if forecast_location == 'ทั้งหมด':
+            # คำนวณการพยากรณ์สำหรับทุกสถานที่
+            location_forecasts = []
+            
+            for location in df_processed['สถานที่'].unique():
+                df_loc = df_processed[df_processed['สถานที่'] == location].copy()
+                df_loc_yearly = df_loc.groupby("ปี")["ค่าเฉลี่ย"].mean().reset_index()
+                
+                if len(df_loc_yearly) >= 3:  # ต้องมีข้อมูลอย่างน้อย 3 ปี
+                    X_loc = df_loc_yearly[["ปี"]]
+                    y_loc = df_loc_yearly["ค่าเฉลี่ย"]
+                    
+                    X_loc_scaled = scaler.fit_transform(X_loc)
+                    
+                    # ใช้โมเดลที่ดีที่สุด
+                    best_model_obj = models[best_model]
+                    best_model_obj.fit(X_loc_scaled, y_loc)
+                    
+                    future_loc_scaled = scaler.transform(future_years)
+                    future_loc_pred = best_model_obj.predict(future_loc_scaled)
+                    
+                    location_forecasts.append({
+                        'สถานที่': location,
+                        'ปี_2026': future_loc_pred[0] if len(future_loc_pred) > 0 else 0,
+                        'ปี_2027': future_loc_pred[1] if len(future_loc_pred) > 1 else 0,
+                        'ปี_2028': future_loc_pred[2] if len(future_loc_pred) > 2 else 0,
+                        'ปี_2029': future_loc_pred[3] if len(future_loc_pred) > 3 else 0,
+                        'ค่าเฉลี่ย_พยากรณ์': future_loc_pred.mean()
+                    })
+            
+            if location_forecasts:
+                loc_forecast_df = pd.DataFrame(location_forecasts)
+                loc_forecast_df = loc_forecast_df.sort_values('ค่าเฉลี่ย_พยากรณ์', ascending=False)
+                
+                # กราฟเปรียบเทียบสถานที่
+                fig = px.bar(
+                    loc_forecast_df,
+                    x='ค่าเฉลี่ย_พยากรณ์',
+                    y='สถานที่',
+                    orientation='h',
+                    title=f'การพยากรณ์ค่าเฉลี่ย PM2.5 แยกตามสถานที่ (โมเดล: {best_model})',
+                    color='ค่าเฉลี่ย_พยากรณ์',
+                    color_continuous_scale='RdYlGn_r'
+                )
+                fig.update_layout(height=600)
+                st.plotly_chart(fig, use_container_width=True)
+                
+                st.dataframe(loc_forecast_df, use_container_width=True)
+        else:
+            st.info("เลือก 'ทั้งหมด' ในตัวกรองสถานที่เพื่อดูการเปรียบเทียบทุกสถานที่")
+
+    with tab5:
+        st.subheader("ตารางข้อมูลการพยากรณ์")
+        
+        forecast_df = pd.DataFrame({
+            "ปี": [last_year + i for i in range(1, 5)]
+        })
+        for name, preds in future_preds.items():
+            forecast_df[name] = preds
+        
+        forecast_df['ค่าเฉลี่ย'] = forecast_df[list(future_preds.keys())].mean(axis=1)
+        forecast_df['ค่าต่ำสุด'] = forecast_df[list(future_preds.keys())].min(axis=1)
+        forecast_df['ค่าสูงสุด'] = forecast_df[list(future_preds.keys())].max(axis=1)
+        
+        st.dataframe(forecast_df.round(2), use_container_width=True)
+        
+        # ดาวน์โหลดข้อมูล
+        csv = forecast_df.to_csv(index=False, encoding='utf-8-sig')
+        st.download_button(
+            label="ดาวน์โหลดข้อมูลการพยากรณ์",
+            data=csv,
+            file_name=f"PM25_Forecast_{forecast_location}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv"
+        )
+        
+        # คำเตือนและคำแนะนำ
+        avg_future = forecast_df['ค่าเฉลี่ย'].mean()
+        if avg_future > 50:
+            st.error("⚠️ คำเตือน: ค่าพยากรณ์เฉลี่ยอยู่ในระดับสูง (>50 μg/m³) ควรมีมาตรการป้องกันและแก้ไข")
+        elif avg_future > 25:
+            st.warning("⚡ ข้อควรระวัง: ค่าพยากรณ์เฉลี่ยอยู่ในระดับปานกลาง (25-50 μg/m³) ควรติดตามอย่างใกล้ชิด")
+        else:
+            st.success("ค่าพยากรณ์เฉลี่ยอยู่ในเกณฑ์ดี (≤25 μg/m³)")
 if __name__ == "__main__":
     main()

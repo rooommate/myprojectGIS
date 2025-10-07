@@ -1,6 +1,5 @@
-# พิกัดของสวนสาธารณะในกรุงเทพมหานคร
-# Coordinates of Public Parks in Bangkok
 import pandas as pd
+# พิกัดของสวนสาธารณะในกรุงเทพมหานคร
 
 PARK_COORDINATES = {
     'สวนสันติภาพ เขตราชเทวี': {
