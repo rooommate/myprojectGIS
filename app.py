@@ -622,14 +622,15 @@ def show_forecast_page():
     st.dataframe(results_df, use_container_width=True)
     
     best_model = results_df.iloc[0]['Model']
-    st.success(f"โมเดลที่ดีที่สุด: **{best_model}** (R² Score: {results_df.iloc[0]['R² Score']:.4f})")
+    # st.success(f"โมเดลที่ดีที่สุด: **{best_model}** (R² Score: {results_df.iloc[0]['R² Score']:.4f})")
 
     # สร้าง Tabs สำหรับกราฟต่างๆ
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5,tab6 = st.tabs([
         "การพยากรณ์โดยรวม",
         "เปรียบเทียบโมเดล",
         "แนวโน้มรายเดือน",
         "การพยากรณ์แต่ละสถานที่",
+        "แผนที่",
         "ตารางข้อมูล"
     ])
 
@@ -803,6 +804,64 @@ def show_forecast_page():
             st.info("เลือก 'ทั้งหมด' ในตัวกรองสถานที่เพื่อดูการเปรียบเทียบทุกสถานที่")
 
     with tab5:
+        st.subheader("แผนที่พยากรณ์ PM2.5")
+
+        if forecast_location == "ทั้งหมด":
+            if 'forecast_table' not in locals() or forecast_table.empty:
+                st.warning("กรุณารันการพยากรณ์ในแท็บก่อนหน้าเพื่อแสดงผลบนแผนที่")
+            else:
+                latest_year = forecast_table['ปี'].max()
+                st.info(f"แสดงผลพยากรณ์สำหรับปี {latest_year}")
+
+                if 'lat' not in df_processed.columns or 'lon' not in df_processed.columns:
+                    st.error("ไม่พบคอลัมน์ lat/lon ในข้อมูล")
+                else:
+                    merged = forecast_table.merge(
+                        df_processed[['สถานที่', 'lat', 'lon']].drop_duplicates(),
+                        on='สถานที่',
+                        how='left'
+                    )
+                    merged_latest = merged[merged['ปี'] == latest_year].dropna(subset=['lat', 'lon'])
+
+                    min_pm, max_pm = merged_latest['PM2.5_พยากรณ์'].min(), merged_latest['PM2.5_พยากรณ์'].max()
+                    merged_latest['color'] = merged_latest['PM2.5_พยากรณ์'].apply(
+                        lambda x: [int(255*(x-min_pm)/(max_pm-min_pm)), 50, int(255*(1-(x-min_pm)/(max_pm-min_pm))), 180]
+                    )
+                    merged_latest['radius'] = merged_latest['PM2.5_พยากรณ์'].apply(
+                        lambda x: 200 + (x - min_pm) / (max_pm - min_pm + 1e-6) * 600
+                    )
+
+                    view_state = pdk.ViewState(
+                        latitude=merged_latest['lat'].mean(),
+                        longitude=merged_latest['lon'].mean(),
+                        zoom=11,
+                        pitch=45
+                    )
+
+                    layer = pdk.Layer(
+                        "ScatterplotLayer",
+                        data=merged_latest,
+                        get_position='[lon, lat]',
+                        get_fill_color='color',
+                        get_radius='radius',
+                        pickable=True
+                    )
+
+                    tooltip = {
+                        "html": "<b>{สถานที่}</b><br/>PM2.5 พยากรณ์: {PM2.5_พยากรณ์:.2f}",
+                        "style": {"color": "white"}
+                    }
+
+                    st.pydeck_chart(pdk.Deck(
+                        map_style='mapbox://styles/mapbox/dark-v11',
+                        initial_view_state=view_state,
+                        layers=[layer],
+                        tooltip=tooltip
+                    ))
+        else:
+            st.info("ฟีเจอร์แผนที่สามารถใช้ได้เฉพาะเมื่อเลือกสถานที่ 'ทั้งหมด'")
+
+    with tab6:
         st.subheader("ตารางข้อมูลการพยากรณ์")
         
         forecast_df = pd.DataFrame({
